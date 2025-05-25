@@ -13,11 +13,16 @@ export default function ChatWindow() {
 
   const handleSendMessage = async () => {
     if (input.trim() === '') return;
+
+    const userInput = input;
+    setInput('');
     setMessages([...messages, `You: ${input}`]);
+
+    console.log("Sending request to /api/intake")
 
     const response = await fetch('/api/intake', {
       method: 'POST',
-      body: JSON.stringify({ message: input }),
+      body: JSON.stringify({ message: userInput }),
       headers: {
         'Content-Type': 'application/json',
       },
@@ -25,7 +30,6 @@ export default function ChatWindow() {
 
     const data = await response.json();
     setMessages((prev) => [...prev, `Campbell: ${data.message}`]);
-    setInput('');
   }
 
   return (
@@ -38,10 +42,17 @@ export default function ChatWindow() {
         ))}
       </div>
       <div className="flex gap-2">
-        <input
+        <textarea
           value={input}
+          autoComplete="off"
           onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              handleSendMessage();
+            }}}
           placeholder="Type your message..."
+          rows={1}
           className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
         />
         <button
