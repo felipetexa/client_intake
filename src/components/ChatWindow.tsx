@@ -1,45 +1,54 @@
 "use client"
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+
+type ChatMessage = { role: "user" | "assistant"; content: string };
 
 export default function ChatWindow() {
-  const [messages, setMessages] = useState<string[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]
+>([
+  {
+    role: "assistant",
+    content:
+      "Hello! I'm here to help with your legal issue. Could you please describe what you're dealing with?",
+  },
+]);
   const [input, setInput] = useState<string>('');
-
-  useEffect(() => {
-    setMessages([
-      "Campbell: Hello! I'm here to help with your legal issue. Could you please describe what you're dealing with?"
-    ]);
-  }, []);
 
   const handleSendMessage = async () => {
     if (input.trim() === '') return;
 
-    const userInput = input;
+    const newMessages: ChatMessage[] = [...messages, { role: "user", content: input }];
+    setMessages(newMessages);
     setInput('');
-    setMessages([...messages, `You: ${input}`]);
 
     console.log("Sending request to /api/intake")
 
     const response = await fetch('/api/intake', {
       method: 'POST',
-      body: JSON.stringify({ message: userInput }),
+      body: JSON.stringify({ messages: newMessages }),
       headers: {
         'Content-Type': 'application/json',
       },
     });
 
     const data = await response.json();
-    setMessages((prev) => [...prev, `Campbell: ${data.message}`]);
+    setMessages((prev) => [...prev, { role: "assistant", content: data.message }]);
   }
 
   return (
     <div className="max-w-xl mx-auto p-4">
       <div className="border border-gray-300 rounded-lg p-4 min-h-[300px] bg-white shadow-sm mb-4 space-y-2 overflow-y-auto">
-        {messages.map((msg, i) => (
-          <p key={i} className="text-sm text-gray-800 whitespace-pre-wrap">
-            {msg}
-          </p>
-        ))}
+      {messages.map((msg, i) => (
+  <p
+    key={i}
+    className={`text-sm whitespace-pre-wrap ${
+      msg.role === "assistant" ? "text-gray-800" : "text-blue-800"
+    }`}
+  >
+    {msg.role === "assistant" ? "Campbell: " : "You: "}
+    {msg.content}
+  </p>
+))}
       </div>
       <div className="flex gap-2">
         <textarea
