@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import axios from "axios";
 import { campbellExamples } from '@/app/data/campbellExamples';
 import type { AxiosError } from "axios";
+import formidable from "formidable";
+import fs from "fs/promises";
+import { Readable } from 'stream';
+import { IncomingMessage } from 'http';
 
 type ChatMessage = {
   role: 'user' | 'assistant';
@@ -29,6 +33,7 @@ Your goal is to:
 - Start the conversation with a friendly tone ("Good morning"/"Good afternoon") based on current time
 - Respond in a professional, human, and non-repetitive manner
 - Continue the conversation naturally, as if over email or a chat
+- If the user uploads a file, consider it when crafting your advice
 
 Important guidance:
 - Do NOT greet or apologize more than once
@@ -83,17 +88,69 @@ async function fetchFromOpenAI(chatHistory: ChatMessage[]): Promise<string>{
   throw new Error("All OpenAI models failed.");
 }
 
-export async function POST(req: Request) {
-  if (req.method !== "POST"){
-    return NextResponse.json({message: 'Method not allowed'}, {status: 405})
+function readableStreamToNodeReadable(stream: ReadableStream<Uint8Array>): Readable {
+  const reader = stream.getReader();
+  return new Readable({
+    async read() {
+      const { done, value } = await reader.read();
+      if (done) this.push(null);
+      else this.push(Buffer.from(value));
+    },
+  });
+}
+
+export async function POST(request: Request) {
+  // const req = (request as any).body as NodeJS.ReadableStream;
+  
+  function toNodeRequest(request: Request): IncomingMessage {
+    const body = readableStreamToNodeReadable(request.body as ReadableStream<Uint8Array>);
+    return Object.assign(body, {
+      headers: Object.fromEntries(request.headers.entries()),
+      method: request.method,
+      url: new URL(request.url).pathname,
+    }) as IncomingMessage;
   }
 
+  const nodeReq = toNodeRequest(request);
+  
+  if (nodeReq.method !== "POST"){
+    return NextResponse.json({message: 'Method not allowed'}, {status: 405})
+  }
+  
   try {
-  const body = await req.json();
-  const messages = body.messages as ChatMessage[];
+  const form = formidable({multiples: false});
+  const [fields, files] = await new Promise<[formidable.Fields, formidable.Files]>((resolve,reject) =>{
+    form.parse(nodeReq, (err, fields, files) => {
+      if (err) reject(err);
+      else (resolve([fields, files]))
+    });
+  });
+
+  const messagesRaw = fields.messages;
+  const messages = JSON.parse(
+    Array.isArray(messagesRaw) ? messagesRaw[0] : messagesRaw || '[]'
+  ) as ChatMessage[];
+
+  let fileText = '';
+  const uploaded = files.file as formidable.File | formidable.File[] | undefined;;
+
+  if (Array.isArray(uploaded) && uploaded[0]) {
+    const content = await fs.readFile(uploaded[0].filepath, 'utf-8');
+    fileText = content.slice(0, 2000);
+  } else if (uploaded && 'filepath' in uploaded) {
+    const content = await fs.readFile(uploaded.filepath, 'utf-8');
+    fileText = content.slice(0, 2000);
+  }
 
   if (!Array.isArray(messages)) {
     return NextResponse.json({ message: "Invalid input format" }, { status: 400 });
+  }
+
+  if (fileText) {
+    messages.push({
+      role: "user",
+      content: `I've attached a file. Here's an excerpt:\n\n${fileText}`,
+    });
   }
 
   const aiReply = await fetchFromOpenAI(messages);
@@ -106,3 +163,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ message: "AI processing failed" }, {status: 500});
   }
   }
+
+  export const config = {
+    api: {
+      bodyParser: false,
+    },
+  };

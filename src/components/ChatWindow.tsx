@@ -1,5 +1,5 @@
 "use client"
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -13,6 +13,8 @@ export default function ChatWindow() {
   },
 ]);
   const [input, setInput] = useState<string>('');
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleSendMessage = async () => {
     if (input.trim() === '') return;
@@ -21,18 +23,24 @@ export default function ChatWindow() {
     setMessages(newMessages);
     setInput('');
 
-    console.log("Sending request to /api/intake")
+    const formData = new FormData();
+    formData.append('messages', JSON.stringify(newMessages));
+    if(uploadedFile){
+      formData.append('file', uploadedFile);
+    }
 
     const response = await fetch('/api/intake', {
       method: 'POST',
-      body: JSON.stringify({ messages: newMessages }),
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      body: formData
     });
-
+    
     const data = await response.json();
     setMessages((prev) => [...prev, { role: "assistant", content: data.message }]);
+    
+    setUploadedFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''; 
+    }
   }
 
   return (
@@ -70,6 +78,12 @@ export default function ChatWindow() {
         >
           Send
         </button>
+        <input
+          type="file"
+          accept=".pdf,.doc,.docx,.txt,.odt"
+          onChange={(e) => setUploadedFile(e.target.files?.[0] || null)}
+          className="text-sm"
+        />
       </div>
     </div>
   );
