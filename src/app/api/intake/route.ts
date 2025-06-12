@@ -3,9 +3,9 @@ import axios from "axios";
 import { campbellExamples } from '@/app/data/campbellExamples';
 import type { AxiosError } from "axios";
 import formidable from "formidable";
-import fs from "fs/promises";
 import { Readable } from 'stream';
 import { IncomingMessage } from 'http';
+import { parseFileText } from '@/services/parseFileText';
 
 type ChatMessage = {
   role: 'user' | 'assistant';
@@ -45,7 +45,7 @@ Important guidance:
 - You can handle lawsuits against negligent professionals, the city, or other lawyers
 - Your specialties include: personal injury, insurance, construction, shareholder disputes, professional negligence, and mortgage enforcement
 
-Respond to each message like a conversation, NOT like a new intake.
+Respond to each message like a conversation, NOT like a new intake. Avoid partial replies. Make sure to conclude your thoughts clearly and don’t end mid-sentence.
 `.trim();
 }
 
@@ -64,7 +64,7 @@ async function fetchFromOpenAI(chatHistory: ChatMessage[]): Promise<string>{
           ...trimmed,
         ],
         temperature: 0.5,
-        max_tokens: 300,
+        max_tokens: 1000,
       }, {
         headers: {
           "Content-Type": 'application/json',
@@ -73,6 +73,7 @@ async function fetchFromOpenAI(chatHistory: ChatMessage[]): Promise<string>{
       });
       const reply = response.data.choices?.[0]?.message?.content?.trim();
       console.log('Model used:', model)
+      
       if (reply) return reply;
     }
     catch (error){
@@ -135,11 +136,9 @@ export async function POST(request: Request) {
   const uploaded = files.file as formidable.File | formidable.File[] | undefined;;
 
   if (Array.isArray(uploaded) && uploaded[0]) {
-    const content = await fs.readFile(uploaded[0].filepath, 'utf-8');
-    fileText = content.slice(0, 2000);
+    fileText = await parseFileText(uploaded[0]);
   } else if (uploaded && 'filepath' in uploaded) {
-    const content = await fs.readFile(uploaded.filepath, 'utf-8');
-    fileText = content.slice(0, 2000);
+    fileText = await parseFileText(uploaded);
   }
 
   if (!Array.isArray(messages)) {
