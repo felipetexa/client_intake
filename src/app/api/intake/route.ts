@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import axios from "axios";
 import { campbellExamples } from '@/app/data/campbellExamples';
+import { determineJurisdiction, extractAmount } from '@/app/data/jurisdiction';
 import type { AxiosError } from "axios";
 import formidable from "formidable";
 import { Readable } from 'stream';
@@ -17,7 +18,7 @@ function getExampleSummary(): string {
   return `Example - Subject: ${first.subject}\n${first.body}`;
 }
 
-function getSystemPrompt(): string {
+function getSystemPrompt(legalContext: string): string {
   const example = getExampleSummary();
   // const examplesText = campbellExamples.map((ex, i) => 
   //   `Example ${i + 1} - Subject: ${ex.subject}\n${ex.body}`
@@ -25,33 +26,74 @@ function getSystemPrompt(): string {
 
   return `
 You are Richard Campbell, an experienced lawyer known for clear, professional, and empathetic communication.
+You are speaking directly with a prospective client — do NOT suggest they consult a lawyer. You ARE that lawyer.
 
-Below are examples of how you typically respond to clients:
+Example of how you usually respond:
 
 ${example}
-Your goal is to:
-- Start the conversation with a friendly tone ("Good morning"/"Good afternoon") based on current time
-- Respond in a professional, human, and non-repetitive manner
-- Continue the conversation naturally, as if over email or a chat
-- If the user uploads a file, consider it when crafting your advice
 
-Important guidance:
-- Do NOT greet or apologize more than once
-- Do NOT add your name or sign-offs
-- NEVER offer a call immediately
-- If the case is Small Claims Court (under $35,000), kindly refer to a paralegal due to conflict
-- Decline Family Law matters unless post-judgment enforcement
-- Decline Real Estate unless it's mortgage-related
-- You can handle lawsuits against negligent professionals, the city, or other lawyers
-- Your specialties include: personal injury, insurance, construction, shareholder disputes, professional negligence, and mortgage enforcement
+LEGAL CONTEXT:
+${legalContext}
 
-Respond to each message like a conversation, NOT like a new intake. Avoid partial replies. Make sure to conclude your thoughts clearly and don’t end mid-sentence.
+Your job:
+- Greet the client based on the time of day
+- Respond professionally and like a human, without repeating yourself
+- Keep the conversation flowing naturally, like an email or live chat
+- If there's an uploaded file, consider its content in your response
+- If the amount claimed is **under $35,000**, you must:
+  - Say this is a Small Claims Court matter
+  - Say you are a **deputy judge** in Small Claims Court
+  - Say you **cannot act as a lawyer**
+  - Refer the user to a **licensed paralegal**
+- Never leave a response unfinished
+
+Strict rules:
+- NEVER mention court names, levels, thresholds, or limits unless explicitly allowed
+- Do NOT include your name or any sign-off
+- Do NOT offer a call immediately
+- Greet/apologize only once
+- Respond as an ongoing thread — not like a form intake
+
+You may decline:
+- Family Law (unless post-judgment enforcement)
+- Real Estate (unless mortgage-related)
+
+You may accept:
+- Personal injury, contract law, insurance, construction, shareholder disputes, professional negligence, mortgage enforcement, lawsuits against lawyers or cities
 `.trim();
 }
 
-async function fetchFromOpenAI(chatHistory: ChatMessage[]): Promise<string>{
+// Your goal is to:
+// - Start the conversation with a friendly tone ("Good morning" / "Good afternoon") based on current time
+// - Respond in a professional, human, and non-repetitive manner
+// - Continue the conversation naturally, as if over email or a chat
+// - If the user uploads a file, consider its content when crafting your advice
+
+// If the claim is $35,000 or more, you must **not explain anything about the court**. Just move on and give legal advice or next steps.
+
+// Responses that break this rule are invalid and must be regenerated. No exceptions.
+
+// - Only mention Small Claims Court if the **total amount claimed is clearly under $35,000**
+// - If the amount is ambiguous or unclear, state that you need more information to assess whether it qualifies for Small Claims Court, and avoid guessing
+// - NEVER state that a case is in Small Claims Court if the amount is $35,000 or more — even if the user mentions that themselves
+
+// Additional Instructions:
+
+// - Do NOT greet or apologize more than once
+// - Do NOT include your name or any sign-off
+// - NEVER offer a call immediately
+// - If the case qualifies as Small Claims Court (under $35,000), kindly refer the user to a paralegal and explain that you are a deputy judge in that court and cannot act as a lawyer there
+// - Decline Family Law matters unless they relate to **post-judgment enforcement**
+// - Decline Real Estate unless it's **mortgage-related**
+// - You CAN handle lawsuits involving: personal injury, contract law, insurance disputes, construction issues, shareholder disputes, professional negligence, mortgage enforcement, lawsuits against other lawyers, or lawsuits against the city
+// - Respond to each message like an **ongoing conversation**, NOT like a new intake
+// - Never leave a response unfinished. Always conclude your thoughts
+// `.trim();
+// }
+
+async function fetchFromOpenAI(chatHistory: ChatMessage[], legalContext: string): Promise<string>{
   const models = ["gpt-4o", "gpt-3.5-turbo"];
-  const systemPrompt = getSystemPrompt();
+  const systemPrompt = getSystemPrompt(legalContext);
 
   const trimmed = chatHistory.slice(-6);
 
@@ -101,8 +143,6 @@ function readableStreamToNodeReadable(stream: ReadableStream<Uint8Array>): Reada
 }
 
 export async function POST(request: Request) {
-  // const req = (request as any).body as NodeJS.ReadableStream;
-  
   function toNodeRequest(request: Request): IncomingMessage {
     const body = readableStreamToNodeReadable(request.body as ReadableStream<Uint8Array>);
     return Object.assign(body, {
@@ -152,7 +192,21 @@ export async function POST(request: Request) {
     });
   }
 
-  const aiReply = await fetchFromOpenAI(messages);
+  const fullUserContent = messages
+  .filter(m => m.role === 'user')
+  .map(m => m.content)
+  .join(' ');
+
+  const detectedAmount = extractAmount(fullUserContent);
+  const jurisdiction = determineJurisdiction(detectedAmount);
+
+  const legalContextInstructions = {
+    small_claims: `The amount claimed is under $35,000. This qualifies as a Small Claims Court matter. You are a deputy judge in that court and cannot act as a lawyer. Kindly refer the client to a licensed paralegal.`,
+    above_small_claims: `The amount claimed is $35,000 or more. You can proceed with legal advice and do not need to mention the court unless relevant.`,
+    ambiguous: `The amount claimed is unclear. You may ask for more information to determine if this is a Small Claims Court matter.`,
+  }[jurisdiction];
+
+  const aiReply = await fetchFromOpenAI(messages, legalContextInstructions);
   return NextResponse.json({ message: aiReply });
 
 

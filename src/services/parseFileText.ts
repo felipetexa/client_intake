@@ -1,4 +1,5 @@
 import mammoth from "mammoth";
+import Tesseract from "tesseract.js";
 // import pdfParse from 'pdf-parse';
 import fs from 'fs/promises';
 import type { File as FormidableFile } from 'formidable';
@@ -23,6 +24,11 @@ export async function parseFileText(file: FormidableFile): Promise<string> {
     if (mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'){
       const result = await mammoth.extractRawText({buffer});
       return result.value.slice(0, 2000);
+    }
+
+    if (mimetype && mimetype.startsWith('image/')){
+      const result = await Tesseract.recognize(filepath, 'eng');
+      return result.data.text.slice(0, 2000);
     }
 
     const content = buffer.toString('utf-8');

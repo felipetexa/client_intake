@@ -80,7 +80,7 @@ export default function ChatWindow() {
         </button>
         <input
           type="file"
-          accept=".pdf,.doc,.docx,.txt,.odt"
+          accept=".pdf,.doc,.docx,.txt,.odt,.jpg,.jpeg,.png,.heic,.webp"
           onChange={(e) => setUploadedFile(e.target.files?.[0] || null)}
           className="text-sm"
         />
