@@ -159,7 +159,7 @@ export async function POST(request: Request) {
   }
   
   try {
-  const form = formidable({multiples: false});
+  const form = formidable({multiples: true});
   const [fields, files] = await new Promise<[formidable.Fields, formidable.Files]>((resolve,reject) =>{
     form.parse(nodeReq, (err, fields, files) => {
       if (err) reject(err);
@@ -173,13 +173,16 @@ export async function POST(request: Request) {
   ) as ChatMessage[];
 
   let fileText = '';
-  const uploaded = files.file as formidable.File | formidable.File[] | undefined;;
+  const uploaded = files.file || files.files;
+  const uploadedArray = Array.isArray(uploaded) ? uploaded : uploaded ? [uploaded] : [];
 
-  if (Array.isArray(uploaded) && uploaded[0]) {
-    fileText = await parseFileText(uploaded[0]);
-  } else if (uploaded && 'filepath' in uploaded) {
-    fileText = await parseFileText(uploaded);
-  }
+  const parsedTexts = await Promise.all(
+    uploadedArray.map(file => parseFileText(file))
+  )
+
+  fileText = parsedTexts.filter(Boolean).join('\n\n').slice(0, 3000);
+
+  console.log('parsed text:', fileText)
 
   if (!Array.isArray(messages)) {
     return NextResponse.json({ message: "Invalid input format" }, { status: 400 });

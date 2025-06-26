@@ -13,7 +13,7 @@ export default function ChatWindow() {
   },
 ]);
   const [input, setInput] = useState<string>('');
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleSendMessage = async () => {
@@ -25,9 +25,9 @@ export default function ChatWindow() {
 
     const formData = new FormData();
     formData.append('messages', JSON.stringify(newMessages));
-    if(uploadedFile){
-      formData.append('file', uploadedFile);
-    }
+    uploadedFiles.forEach((file) => {
+      formData.append('files', file);
+    });
 
     const response = await fetch('/api/intake', {
       method: 'POST',
@@ -37,7 +37,7 @@ export default function ChatWindow() {
     const data = await response.json();
     setMessages((prev) => [...prev, { role: "assistant", content: data.message }]);
     
-    setUploadedFile(null);
+    setUploadedFiles([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = ''; 
     }
@@ -58,7 +58,31 @@ export default function ChatWindow() {
   </p>
 ))}
       </div>
+        {uploadedFiles.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-2">
+          {uploadedFiles.map((file, idx) => {
+            const ext = file.name.split('.').pop()?.toLowerCase();
+            const icon = ext === 'pdf' ? '📄' : ext?.match(/jpe?g|png|webp|heic/) ? '🖼️' : '📎';
+
+            return (
+              <div key={idx} className="flex items-center bg-gray-100 rounded p-2 text-sm">
+                <span className="mr-2">{icon}</span>
+                <span className="mr-2 max-w-[150px] truncate">{file.name}</span>
+                <button
+                  onClick={() => {
+                    setUploadedFiles((prev) => prev.filter((_, i) => i !== idx));
+                  }}
+                  className="text-black hover:text-red-500"
+                >
+                  ✕
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        )}
       <div className="flex gap-2">
+
         <textarea
           value={input}
           autoComplete="off"
@@ -78,12 +102,20 @@ export default function ChatWindow() {
         >
           Send
         </button>
+        <label htmlFor="file-upload" className="cursor-pointer p-2 rounded hover:bg-gray-100 transition">
+          📎
         <input
+          id='file-upload'
           type="file"
           accept=".pdf,.doc,.docx,.txt,.odt,.jpg,.jpeg,.png,.heic,.webp"
-          onChange={(e) => setUploadedFile(e.target.files?.[0] || null)}
-          className="text-sm"
+          onChange={(e) => {
+            if (e.target.files) {
+              setUploadedFiles([...uploadedFiles, ...Array.from(e.target.files)]);
+            }
+          }}
+          className="hidden"
         />
+        </label>
       </div>
     </div>
   );
