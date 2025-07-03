@@ -15,6 +15,15 @@ export default function ChatWindow() {
   const [input, setInput] = useState<string>('');
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  
+  const [intakeId] = useState<string>(() => {
+    const existingId = localStorage.getItem('intake-id');
+    if (existingId) return existingId;
+
+    const newId = crypto.randomUUID();
+    localStorage.setItem('intake-id', newId);
+    return newId;
+  });
 
   const handleSendMessage = async () => {
     if (input.trim() === '') return;
@@ -41,6 +50,24 @@ export default function ChatWindow() {
     if (fileInputRef.current) {
       fileInputRef.current.value = ''; 
     }
+  }
+
+  const handleUpload = async (selectedFiles: FileList) => {
+    const formData = new FormData();
+    for (const file of selectedFiles || []) {
+      formData.append('files', file);
+    }
+
+    const response = await fetch('/api/upload', {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'intake-id': intakeId, 
+      },
+    });
+
+    const data = await response.json();
+    console.log('Upload result:', data);
   }
 
   return (
@@ -109,10 +136,12 @@ export default function ChatWindow() {
           type="file"
           accept=".pdf,.doc,.docx,.txt,.odt,.jpg,.jpeg,.png,.heic,.webp"
           onChange={(e) => {
-            if (e.target.files) {
-              setUploadedFiles([...uploadedFiles, ...Array.from(e.target.files)]);
-            }
-          }}
+            const files = e.target.files;
+            if (files) {
+              handleUpload(files);
+              setUploadedFiles([...uploadedFiles, ...Array.from(files)]);
+            
+          }}}
           className="hidden"
         />
         </label>

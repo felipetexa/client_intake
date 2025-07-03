@@ -182,8 +182,6 @@ export async function POST(request: Request) {
 
   fileText = parsedTexts.filter(Boolean).join('\n\n').slice(0, 3000);
 
-  console.log('parsed text:', fileText)
-
   if (!Array.isArray(messages)) {
     return NextResponse.json({ message: "Invalid input format" }, { status: 400 });
   }
